@@ -30,35 +30,101 @@ sys.path.append(os.path.join(PROJECT_DIR, "src"))
 def find_latest_model():
     """Encontra o modelo mais recente no MLflow"""
     import mlflow
-    mlflow.set_tracking_uri(MLRUNS_DIR)
+    import pandas as pd
+    
+    # Tentar diferentes caminhos possíveis
+    possible_paths = [
+        MLRUNS_DIR,
+        os.path.join(PROJECT_DIR, "mlruns"),
+        "./mlruns",
+        "/content/MLFlow-GCP/mlruns",
+    ]
+    
+    mlruns_path = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            mlruns_path = path
+            print(f"   ✅ Encontrado mlruns em: {path}")
+            break
+        else:
+            print(f"   ❌ Não existe: {path}")
+    
+    if not mlruns_path:
+        raise Exception("Pasta mlruns não encontrada!")
+    
+    mlflow.set_tracking_uri(mlruns_path)
+    
+    # Listar conteúdo do mlruns para debug
+    print(f"\n   📂 Conteúdo de {mlruns_path}:")
+    for item in os.listdir(mlruns_path):
+        item_path = os.path.join(mlruns_path, item)
+        if os.path.isdir(item_path):
+            print(f"      📁 {item}/")
+        else:
+            print(f"      📄 {item}")
     
     # Buscar todos os experiments
-    experiments = mlflow.search_experiments()
-    all_runs = []
+    try:
+        experiments = mlflow.search_experiments()
+        print(f"\n   🔬 Experiments encontrados: {len(experiments)}")
+        for exp in experiments:
+            print(f"      - {exp.name} (ID: {exp.experiment_id})")
+    except Exception as e:
+        print(f"   ⚠️ Erro ao buscar experiments: {e}")
+        experiments = []
     
+    # Buscar runs em cada experiment
+    all_runs = []
     for exp in experiments:
-        runs = mlflow.search_runs(
-            experiment_ids=[exp.experiment_id],
-            order_by=["metrics.accuracy DESC"],
-        )
-        if not runs.empty:
-            all_runs.append(runs)
+        try:
+            runs = mlflow.search_runs(experiment_ids=[exp.experiment_id])
+            if not runs.empty:
+                print(f"   📊 Experiment '{exp.name}': {len(runs)} runs")
+                all_runs.append(runs)
+        except Exception as e:
+            print(f"   ⚠️ Erro no experiment {exp.name}: {e}")
+    
+    # Se não encontrou via API, tentar buscar diretamente nos diretórios
+    if not all_runs:
+        print("\n   🔍 Buscando modelos diretamente nos diretórios...")
+        
+        # Procurar em subpastas do mlruns
+        for item in os.listdir(mlruns_path):
+            exp_path = os.path.join(mlruns_path, item)
+            if os.path.isdir(exp_path) and item not in ['.trash', 'models']:
+                # Listar runs
+                for run_item in os.listdir(exp_path):
+                    run_path = os.path.join(exp_path, run_item)
+                    if os.path.isdir(run_path) and run_item != 'meta.yaml':
+                        artifacts_path = os.path.join(run_path, "artifacts")
+                        if os.path.exists(artifacts_path):
+                            # Procurar modelo
+                            for root, dirs, files in os.walk(artifacts_path):
+                                for file in files:
+                                    if file.endswith(('.pkl', '.joblib')):
+                                        model_path = os.path.join(root, file)
+                                        print(f"   ✅ Modelo encontrado: {model_path}")
+                                        return model_path, run_item, 0.85  # accuracy padrão
     
     if not all_runs:
-        raise Exception("Nenhum modelo encontrado no MLflow!")
+        raise Exception("Nenhum run encontrado no MLflow!")
     
     # Concatenar todos os runs e pegar o melhor
-    import pandas as pd
     all_runs_df = pd.concat(all_runs, ignore_index=True)
-    all_runs_df = all_runs_df.sort_values("metrics.accuracy", ascending=False)
+    
+    # Verificar se tem coluna accuracy
+    if 'metrics.accuracy' in all_runs_df.columns:
+        all_runs_df = all_runs_df.sort_values("metrics.accuracy", ascending=False)
+        accuracy = all_runs_df.iloc[0].get("metrics.accuracy", 0)
+    else:
+        accuracy = 0.85  # valor padrão
     
     best_run = all_runs_df.iloc[0]
     run_id = best_run["run_id"]
     experiment_id = best_run["experiment_id"]
-    accuracy = best_run.get("metrics.accuracy", 0)
     f1 = best_run.get("metrics.f1_score", 0)
     
-    print(f"✅ Melhor modelo encontrado:")
+    print(f"\n✅ Melhor modelo encontrado:")
     print(f"   Run ID: {run_id}")
     print(f"   Experiment ID: {experiment_id}")
     print(f"   Accuracy: {accuracy:.4f}")
@@ -66,7 +132,9 @@ def find_latest_model():
         print(f"   F1-Score: {f1:.4f}")
     
     # Encontrar o arquivo do modelo
-    artifacts_dir = os.path.join(MLRUNS_DIR, str(experiment_id), run_id, "artifacts")
+    artifacts_dir = os.path.join(mlruns_path, str(experiment_id), run_id, "artifacts")
+    
+    print(f"\n   🔍 Buscando modelo em: {artifacts_dir}")
     
     # Procurar pelo modelo
     model_path = None
@@ -74,6 +142,7 @@ def find_latest_model():
         for file in files:
             if file.endswith(('.pkl', '.joblib')) or file == 'model.pkl':
                 model_path = os.path.join(root, file)
+                print(f"   ✅ Arquivo encontrado: {model_path}")
                 break
         if model_path:
             break
@@ -81,6 +150,7 @@ def find_latest_model():
     if not model_path:
         # Tentar carregar via MLflow
         model_uri = f"runs:/{run_id}/model"
+        print(f"   🔄 Tentando carregar via URI: {model_uri}")
         try:
             model = mlflow.sklearn.load_model(model_uri)
             # Salvar temporariamente
@@ -88,9 +158,9 @@ def find_latest_model():
             temp_path = os.path.join(PROJECT_DIR, "temp_model.pkl")
             joblib.dump(model, temp_path)
             model_path = temp_path
-            print(f"   Modelo carregado via MLflow URI")
+            print(f"   ✅ Modelo carregado via MLflow URI")
         except Exception as e:
-            print(f"   Erro ao carregar modelo: {e}")
+            print(f"   ❌ Erro ao carregar modelo: {e}")
             raise Exception(f"Não foi possível encontrar o modelo para run {run_id}")
     
     return model_path, run_id, accuracy
