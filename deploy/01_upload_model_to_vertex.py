@@ -148,19 +148,41 @@ def find_latest_model():
             break
     
     if not model_path:
-        # Tentar carregar via MLflow
-        model_uri = f"runs:/{run_id}/model"
-        print(f"   🔄 Tentando carregar via URI: {model_uri}")
-        try:
-            model = mlflow.sklearn.load_model(model_uri)
-            # Salvar temporariamente
-            import joblib
-            temp_path = os.path.join(PROJECT_DIR, "temp_model.pkl")
-            joblib.dump(model, temp_path)
-            model_path = temp_path
-            print(f"   ✅ Modelo carregado via MLflow URI")
-        except Exception as e:
-            print(f"   ❌ Erro ao carregar modelo: {e}")
+        # Tentar carregar via MLflow com diferentes nomes de artifact
+        artifact_names = ["model", "model_rfc", "model_xgb"]
+        
+        for artifact_name in artifact_names:
+            model_uri = f"runs:/{run_id}/{artifact_name}"
+            print(f"   🔄 Tentando carregar via URI: {model_uri}")
+            try:
+                model = mlflow.sklearn.load_model(model_uri)
+                # Salvar temporariamente
+                import joblib
+                temp_path = os.path.join(PROJECT_DIR, "temp_model.pkl")
+                joblib.dump(model, temp_path)
+                model_path = temp_path
+                print(f"   ✅ Modelo carregado via MLflow URI: {artifact_name}")
+                break
+            except Exception as e:
+                print(f"   ⚠️ Não encontrado: {artifact_name}")
+                continue
+        
+        if not model_path:
+            # Tentar com xgboost
+            for artifact_name in artifact_names:
+                model_uri = f"runs:/{run_id}/{artifact_name}"
+                try:
+                    model = mlflow.xgboost.load_model(model_uri)
+                    import joblib
+                    temp_path = os.path.join(PROJECT_DIR, "temp_model.pkl")
+                    joblib.dump(model, temp_path)
+                    model_path = temp_path
+                    print(f"   ✅ Modelo XGBoost carregado via: {artifact_name}")
+                    break
+                except:
+                    continue
+        
+        if not model_path:
             raise Exception(f"Não foi possível encontrar o modelo para run {run_id}")
     
     return model_path, run_id, accuracy
