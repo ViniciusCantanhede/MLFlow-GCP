@@ -2,21 +2,17 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Instalar dependências do projeto principal
-COPY ../requirements.txt ./requirements-main.txt
-RUN pip install --no-cache-dir -r requirements-main.txt
-
 # Instalar dependências adicionais da API
-RUN pip install --no-cache-dir fastapi uvicorn mlflow
+RUN pip install --no-cache-dir fastapi uvicorn joblib scikit-learn numpy pandas
 
 # Copiar código da API
 COPY api_model.py .
 
-# Copiar modelo do MLflow (será copiado manualmente antes do build)
+# Copiar modelo
 COPY model/ ./model/
 
 # Variáveis de ambiente
-ENV MODEL_PATH=/app/model
+ENV MODEL_PATH=/app/model/model.pkl
 ENV PORT=8080
 
 # Expor porta

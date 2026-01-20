@@ -5,7 +5,7 @@ Deploy via Cloud Run - mais flexível e comum em produção.
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import mlflow
+import joblib
 import numpy as np
 import os
 from typing import List, Optional
@@ -17,14 +17,14 @@ app = FastAPI(
 )
 
 # Carregar modelo na inicialização
-MODEL_PATH = os.environ.get("MODEL_PATH", "model")
+MODEL_PATH = os.environ.get("MODEL_PATH", "model/model.pkl")
 model = None
 
 @app.on_event("startup")
 async def load_model():
     global model
     try:
-        model = mlflow.sklearn.load_model(MODEL_PATH)
+        model = joblib.load(MODEL_PATH)
         print(f"✅ Modelo carregado de: {MODEL_PATH}")
     except Exception as e:
         print(f"❌ Erro ao carregar modelo: {e}")
