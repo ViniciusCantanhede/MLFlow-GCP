@@ -32,34 +32,47 @@ def find_latest_model():
     import mlflow
     mlflow.set_tracking_uri(MLRUNS_DIR)
     
-    # Buscar todos os runs
-    runs = mlflow.search_runs(
-        experiment_ids=["0"],  # Default experiment
-        order_by=["metrics.accuracy DESC"],
-    )
+    # Buscar todos os experiments
+    experiments = mlflow.search_experiments()
+    all_runs = []
     
-    if runs.empty:
+    for exp in experiments:
+        runs = mlflow.search_runs(
+            experiment_ids=[exp.experiment_id],
+            order_by=["metrics.accuracy DESC"],
+        )
+        if not runs.empty:
+            all_runs.append(runs)
+    
+    if not all_runs:
         raise Exception("Nenhum modelo encontrado no MLflow!")
     
-    # Pegar o melhor run
-    best_run = runs.iloc[0]
+    # Concatenar todos os runs e pegar o melhor
+    import pandas as pd
+    all_runs_df = pd.concat(all_runs, ignore_index=True)
+    all_runs_df = all_runs_df.sort_values("metrics.accuracy", ascending=False)
+    
+    best_run = all_runs_df.iloc[0]
     run_id = best_run["run_id"]
+    experiment_id = best_run["experiment_id"]
     accuracy = best_run.get("metrics.accuracy", 0)
     f1 = best_run.get("metrics.f1_score", 0)
     
     print(f"✅ Melhor modelo encontrado:")
     print(f"   Run ID: {run_id}")
+    print(f"   Experiment ID: {experiment_id}")
     print(f"   Accuracy: {accuracy:.4f}")
-    print(f"   F1-Score: {f1:.4f}")
+    if pd.notna(f1):
+        print(f"   F1-Score: {f1:.4f}")
     
     # Encontrar o arquivo do modelo
-    artifacts_dir = os.path.join(MLRUNS_DIR, "0", run_id, "artifacts")
+    artifacts_dir = os.path.join(MLRUNS_DIR, str(experiment_id), run_id, "artifacts")
     
     # Procurar pelo modelo
     model_path = None
     for root, dirs, files in os.walk(artifacts_dir):
         for file in files:
-            if file.endswith(('.pkl', '.joblib', 'model.pkl')):
+            if file.endswith(('.pkl', '.joblib')) or file == 'model.pkl':
                 model_path = os.path.join(root, file)
                 break
         if model_path:
@@ -71,11 +84,13 @@ def find_latest_model():
         try:
             model = mlflow.sklearn.load_model(model_uri)
             # Salvar temporariamente
+            import joblib
             temp_path = os.path.join(PROJECT_DIR, "temp_model.pkl")
             joblib.dump(model, temp_path)
             model_path = temp_path
             print(f"   Modelo carregado via MLflow URI")
-        except:
+        except Exception as e:
+            print(f"   Erro ao carregar modelo: {e}")
             raise Exception(f"Não foi possível encontrar o modelo para run {run_id}")
     
     return model_path, run_id, accuracy
