@@ -8,16 +8,29 @@ from xgboost import XGBClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, balanced_accuracy_score, recall_score, f1_score
-from azure.identity import DefaultAzureCredential
-from azure.ai.ml import MLClient
-from azureml.core import Workspace
+from google.cloud import storage
+from google.cloud import aiplatform
+
+# ==================== CONFIGURAÇÕES GCP ====================
+PROJECT_ID = "mlops-484912"
+REGION = "us-central1"
+BUCKET_NAME = "meu-bucket-29061999"
+
+# Detecta diretório do projeto
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
+
+# MLflow: usa tracking local para desenvolvimento
+# Em produção, você usaria um servidor MLflow ou Vertex AI
+MLFLOW_TRACKING_URI = os.path.join(PROJECT_DIR, "mlruns")
 
 # Configura logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def carregar_dados():
     logging.info("Carregando os dados pré-processados")
-    df_transformado = pd.read_csv("df_transformado.csv")
+    csv_path = os.path.join(PROJECT_DIR, "df_transformado.csv")
+    df_transformado = pd.read_csv(csv_path)
     return df_transformado
 
 def split_dados(df: pd.DataFrame, target: str, test_size=0.2, random_state=42):
@@ -82,58 +95,112 @@ def treinar_modelo_rf(X_train, y_train, X_test, y_test, params=None):
     return model, metrics
 
 
-def registra_mlflow_azure_2(model, metrics, experiment_name="inadimplencia-rfc", tags=None):
-    logging.info("Registrando modelo 2 no MLflow com Azure")
-    # Configure MLflow para Azure (aqui, espera-se que já exista configuração de URI)
-    # Exemplo de configuração:
-    mlflow.set_tracking_uri("azureml://eastus.api.azureml.ms/mlflow/v1.0/subscriptions/0b97f8d7-e740-4d8a-be3c-96eea4182bf8/resourceGroups/aulasalura/providers/Microsoft.MachineLearningServices/workspaces/ds-workspace")
-    logging.info("Registrando modelo Random Forest no MLflow com Azure")
+def registra_mlflow_gcp(model, metrics, experiment_name="inadimplencia-rfc", tags=None, model_type="sklearn"):
+    """
+    Registra modelo no MLflow usando Google Cloud Storage como backend.
+    
+    Este é o padrão de MLOps para rastreabilidade de experimentos:
+    - Tracking URI: onde ficam logs de métricas/params
+    - Artifact URI: onde ficam os modelos serializados
+    """
+    logging.info("Registrando modelo no MLflow com GCS")
+    
+    # Configura MLflow para usar GCS como backend
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    
+    # Cria/seleciona experimento
     mlflow.set_experiment(experiment_name)
+    
     with mlflow.start_run():
-        mlflow.log_param("model_type", "RandomForestClassifier")
-        # Log de métricas
+        # Log de parâmetros do modelo
+        mlflow.log_param("model_type", "RandomForestClassifier" if model_type == "sklearn" else "XGBoostClassifier")
+        mlflow.log_param("project_id", PROJECT_ID)
+        mlflow.log_param("bucket", BUCKET_NAME)
+        
+        # Log de métricas - IMPORTANTE para comparar modelos
         for k, v in metrics.items():
             mlflow.log_metric(k, v)
 
+        # Tags para organização e filtro
         if tags:
             mlflow.set_tags(tags)
+        
+        # Log do modelo serializado
+        if model_type == "sklearn":
+            mlflow.sklearn.log_model(model, "model_rfc", registered_model_name="ModelRFC-GCP")
+        else:
+            mlflow.xgboost.log_model(model, "model_xgb", registered_model_name="ModelXGB-GCP")
+        
+        logging.info(f"Modelo registrado com sucesso no experimento: {experiment_name}")
 
-        mlflow.sklearn.log_model(model, "model_rfc")
 
-def registra_mlflow_azure(model, metrics, experiment_name="inadimplencia-xgb", tags=None):
-    logging.info("Registrando modelo 1 no MLflow com Azure")
-    # Configure MLflow para Azure (aqui, espera-se que já exista configuração de URI)
-    # Exemplo de configuração:
-    mlflow.set_tracking_uri("azureml://eastus.api.azureml.ms/mlflow/v1.0/subscriptions/0b97f8d7-e740-4d8a-be3c-96eea4182bf8/resourceGroups/aulasalura/providers/Microsoft.MachineLearningServices/workspaces/ds-workspace")
-    logging.info("Registrando modelo XGBoost no MLflow com Azure")
+def registra_mlflow_gcp_xgb(model, metrics, experiment_name="inadimplencia-xgb", tags=None):
+    """Registra modelo XGBoost no MLflow com GCS."""
+    logging.info("Registrando modelo XGBoost no MLflow com GCS")
+    
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     mlflow.set_experiment(experiment_name)
+    
     with mlflow.start_run():
         mlflow.log_param("model_type", "XGBoostClassifier")
-        # Log de métricas
+        mlflow.log_param("project_id", PROJECT_ID)
+        
         for k, v in metrics.items():
             mlflow.log_metric(k, v)
 
         if tags:
             mlflow.set_tags(tags)
 
-        mlflow.xgboost.log_model(model, "model_xgb")
+        mlflow.xgboost.log_model(model, "model_xgb", registered_model_name="ModelXGB-GCP")
+
+
+def upload_to_gcs(local_path: str, gcs_path: str):
+    """
+    Faz upload de arquivo local para o Google Cloud Storage.
+    Útil para salvar datasets processados, modelos, ou outputs.
+    """
+    client = storage.Client(project=PROJECT_ID)
+    bucket = client.bucket(BUCKET_NAME)
+    blob = bucket.blob(gcs_path)
+    blob.upload_from_filename(local_path)
+    logging.info(f"Upload concluído: gs://{BUCKET_NAME}/{gcs_path}")
+
+
+def download_from_gcs(gcs_path: str, local_path: str):
+    """Download de arquivo do GCS para local."""
+    client = storage.Client(project=PROJECT_ID)
+    bucket = client.bucket(BUCKET_NAME)
+    blob = bucket.blob(gcs_path)
+    blob.download_to_filename(local_path)
+    logging.info(f"Download concluído: {local_path}")
 
 if __name__ == "__main__":
-    #Autenticação do Azure ML
-    ml_client = MLClient(
-        DefaultAzureCredential(),
-        subscription_id = "0b97f8d7-e740-4d8a-be3c-96eea4182bf8",
-        resource_group_name = "AulasAlura",
-        workspace_name = "DS-Workspace" 
+    # ==================== INICIALIZAÇÃO GCP ====================
+    # Inicializa Vertex AI (equivalente ao MLClient do Azure)
+    aiplatform.init(
+        project=PROJECT_ID,
+        location=REGION,
+        staging_bucket=f"gs://{BUCKET_NAME}"
     )
+    logging.info(f"Vertex AI inicializado - Projeto: {PROJECT_ID}, Região: {REGION}")
     
+    # ==================== PIPELINE DE TREINAMENTO ====================
+    # 1. Carrega dados pré-processados
     df_transformado = carregar_dados()
     df_transformado = df_transformado.set_index('ID_Cliente', drop=True)
-    X_train, X_test, y_train, y_test = split_dados(df_transformado, target = "Status_Pagamento")
-    model, metrics = treinar_modelo_xgb(X_train, y_train, X_test, y_test)
-    model2, metrics2 = treinar_modelo_rf(X_train, y_train, X_test, y_test)
-    registra_mlflow_azure(model, metrics, experiment_name="inadimplencia-xgb")
-    registra_mlflow_azure_2(model2, metrics2, tags={"versao": "1.0", "pipeline": "producao"})
+    
+    # 2. Split treino/teste
+    X_train, X_test, y_train, y_test = split_dados(df_transformado, target="Status_Pagamento")
+    
+    # 3. Treina modelos (experimentos)
+    model_xgb, metrics_xgb = treinar_modelo_xgb(X_train, y_train, X_test, y_test)
+    model_rf, metrics_rf = treinar_modelo_rf(X_train, y_train, X_test, y_test)
+    
+    # 4. Registra no MLflow (rastreabilidade)
+    registra_mlflow_gcp_xgb(model_xgb, metrics_xgb, experiment_name="inadimplencia-xgb")
+    registra_mlflow_gcp(model_rf, metrics_rf, 
+                        experiment_name="inadimplencia-rfc",
+                        tags={"versao": "1.0", "pipeline": "producao", "cloud": "gcp"})
 
     logging.info("Pipeline de modelagem e registro concluído!")
 

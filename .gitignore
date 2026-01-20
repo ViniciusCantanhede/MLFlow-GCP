@@ -1,0 +1,110 @@
+# ==========================
+# Python
+# ==========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ==========================
+# macOS
+# ==========================
+.DS_Store
+*.DS_Store
+
+# ==========================
+# Virtual Environment
+# ==========================
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# ==========================
+# MLflow
+# ==========================
+mlruns/
+mlartifacts/
+*.db
+
+# ==========================
+# Jupyter Notebook
+# ==========================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ==========================
+# IDE / Editor
+# ==========================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ==========================
+# Dados processados e outputs
+# ==========================
+df_transformado.csv
+predicoes_*.csv
+*_tratada.csv
+outputs/
+data/predicoes_*.csv
+
+# ==========================
+# Credenciais e Secrets
+# ==========================
+*.json
+!package.json
+.env
+.env.*
+*.pem
+*.key
+service-account*.json
+credentials*.json
+
+# ==========================
+# Logs
+# ==========================
+*.log
+logs/
+
+# ==========================
+# Arquivos temporários
+# ==========================
+*.tmp
+*.temp
+.cache/
+tmp/
+temp/
+
+# ==========================
+# Arquivos grandes (dados brutos ficam no GCS)
+# ==========================
+
+data/*.csv
+
+# ==========================
+# Pipelines compilados
+# ==========================
+*.json
+!jobs/*.json
+pipeline_*.json

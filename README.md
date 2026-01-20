@@ -1,284 +1,558 @@
-# Projeto-SPIN: Sistema de Previsão de Inadimplência
+# 🎯 Projeto SPIN - Sistema de Predição de Inadimplência
 
-## 📋 Visão Geral
+> **Projeto de MLOps completo** usando Google Cloud Platform (Vertex AI, GCS) e MLflow.
 
-O Projeto SPIN (Sistema de Predição de Inadimplência) é uma solução completa de Machine Learning operacionalizada em ambiente de produção, voltada à predição da probabilidade de inadimplência de um serviço de assinaturas.
-O projeto foi desenvolvido utilizando Python, MLflow, Azure Machine Learning e GitHub Actions, seguindo as diretrizes de MLOps, observabilidade e boas práticas de engenharia de software para ciência de dados. 
+---
 
-> Esta é uma **PROPOSTA DE DOCUMENTAÇÃO**, como parte do curso da Alura de **MLOps: implantação de modelos com automação e monitoramento**.
->> Fique a vontade para clonar, fazer as modificações necessárias e aplicar as **boas práticas em seus projetos**.
->>
->> **Observação:** Durante o curso foram realizadas diversas simplificações para facilitar as explicações, como unir os códigos em uma única pasta. Deixo aqui um incentivo para que teste utilizar da forma mais adequada, lembrando de ajustar os caminhos!
+## 📋 Índice
 
-## 🎯 Objetivos
+1. [Visão Geral](#-visão-geral)
+2. [Arquitetura MLOps](#-arquitetura-mlops)
+3. [Estrutura do Projeto](#-estrutura-do-projeto)
+4. [Passo a Passo](#-passo-a-passo)
+5. [Como Funciona Cada Etapa](#-como-funciona-cada-etapa)
+6. [Executando o Projeto](#-executando-o-projeto)
+7. [Conceitos para Entrevista](#-conceitos-para-entrevista)
 
-- **Objetivo Principal**: Desenvolver um modelo preditivo para identificar clientes propensos a se tornarem inadimplentes.
-- **Objetivos Específicos**:
-  - Analisar padrões comportamentais dos clientes.
-  - Implementar e comparar diferentes algoritmos de ML, utilizando experimentos.
-  - Fornecer insights acionáveis para retenção de clientes e melhoria em seus pagamentos.
-  - Criar visualizações interpretáveis dos resultados.
-  - Escalar a solução para toda organização.
-  - Aplicar as práticas de MLOPs no fluxo do projeto.
+---
 
-## 🏗️ Arquitetura do Projeto
-> Neste repositório temos uma pasta extra dentro de data/: dados-desafio
->> **dados-desafio** contêm os dados a serem utilizados no desafio/atividade prática durante o curso. Será informado na plataforma o momento de utiliza-lo.
->>
+## 🎯 Visão Geral
 
+Este projeto implementa um **pipeline completo de Machine Learning** para prever inadimplência de clientes. 
 
-*- Apresentar toda a arquitetura e design do projeto.*  
+**Objetivo:** Dado um cliente com suas características, prever se ele será inadimplente ou não.
+
+### Stack Tecnológica
+
+| Categoria | Ferramenta | Para que serve |
+|-----------|------------|----------------|
+| **Cloud** | Google Cloud Platform | Infraestrutura |
+| **Storage** | Google Cloud Storage (GCS) | Armazenar dados e modelos |
+| **ML Platform** | Vertex AI | Executar pipelines de ML |
+| **Experiment Tracking** | MLflow | Rastrear experimentos e versionar modelos |
+| **Pipeline** | Kubeflow Pipelines (KFP) | Orquestrar etapas do ML |
+| **Linguagem** | Python 3.10+ | Desenvolvimento |
+| **ML** | scikit-learn, XGBoost | Algoritmos de ML |
+
+---
+
+## 🏗️ Arquitetura MLOps
+
+### O que é MLOps?
+
+MLOps = **Machine Learning + DevOps**. É o conjunto de práticas para automatizar e monitorar o ciclo de vida de modelos de ML.
+
+### Fluxo Completo
+
 ```
-projeto-CHURN/
-|   ├── data/                                    # Datasets e arquivos de dados
-│   │   ├── dados-desafio/                       # Dados da atividade prática
-│   │   ├── base_cliente_inadimplencia.csv       # Dados utilizados para treinar e registrar os modelos
-│   │   └── base_cliente_inadimplencia_2.csv     # Dados simulando em produção
-│   ├── jobs/                                    # Arquivos do tipo yaml com as configurações dos jobs
-│   │   ├── agendamento-scoring-pipe.yaml        # Agendamento para rodar o pipeline
-│   │   ├── pipeline.yml                         # Job automatizado para rodar o pipeline (estrutura)
-│   │   └── scoring_job.yaml                     # Job para rodar as predições do modelo produtivo (estrutura)
-│   ├── src/                                     # Código fonte
-│   │   ├── model_registry.py                    # Script de treinamento/teste dos Modelos de ML em experimentos 
-│   │   ├── pre_processamento.py                 # Script de processamento de dados
-│   │   └── scoring_model_final.py               # Script de aplicação do modelo campeão em produção  
-│   ├── tests/                                   # Testes unitários
-│   │   ├── test_model.py                        # Teste e validação das funções de aplicação do modelo
-|   |   └── test_pre_processamento.py            # Teste e validação das funções de pré-processamento  
-│   ├── requirements.txt                         # Dependências
-│   └── README.md                                # Documentação principal
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           CICLO DE VIDA MLOps                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────┐      ┌─────────────┐      ┌───────────┐      ┌──────────┐
+    │  DADOS  │ ───▶ │ PRÉ-PROCESS │ ───▶ │ TREINO    │ ───▶ │ AVALIAÇÃO│
+    │  (GCS)  │      │             │      │ (MLflow)  │      │          │
+    └─────────┘      └─────────────┘      └───────────┘      └────┬─────┘
+         ▲                                                        │
+         │                                                        ▼
+    ┌─────────┐      ┌─────────────┐      ┌───────────┐      ┌──────────┐
+    │MONITORA │ ◀─── │ PREDIÇÕES   │ ◀─── │  DEPLOY   │ ◀─── │ REGISTRO │
+    │ MENTO   │      │ (Scoring)   │      │(Vertex AI)│      │(Registry)│
+    └─────────┘      └─────────────┘      └───────────┘      └──────────┘
+         │                                                        
+         └──────────────── RETREINO (se necessário) ─────────────┘
 ```
 
-## 🔧 Tecnologias Utilizadas
+### Por que cada etapa é importante?
 
-### Linguagens e Frameworks
-- **Python 3.8+**: Linguagem principal
-- **Pandas**: Manipulação de dados
-- **NumPy**: Computação numérica
-- **Scikit-learn e XGBoost**: Algoritmos de Machine Learning
-- ...
+| Etapa | O que faz | Por que é importante |
+|-------|-----------|---------------------|
+| **Dados** | Armazena dados brutos | Fonte única de verdade |
+| **Pré-processamento** | Limpa e transforma dados | Dados ruins = modelo ruim |
+| **Treinamento** | Treina o modelo | Aprende padrões dos dados |
+| **Avaliação** | Calcula métricas | Sabe se o modelo é bom |
+| **Registro** | Versiona o modelo | Rastreabilidade e rollback |
+| **Deploy** | Coloca em produção | Gera valor para o negócio |
+| **Monitoramento** | Acompanha performance | Detecta degradação |
 
-### Ferramentas de Desenvolvimento
-- **Azure Machine Learning**: Serviço de nuvem que acelera e gerencia o ciclo de vida do projeto de aprendizado de máquina (ML)
-- **Jupyter Notebook**: Desenvolvimento interativo
-- **Git**: Controle de versão
-- **Pip**: Gerenciamento de dependências
-- ...
+---
 
-## 📊 Metodologia
+## 📁 Estrutura do Projeto
 
-### 1. Análise Exploratória
-- Estatísticas descritivas dos dados
-- Identificação de padrões e outliers
-- Análise de correlações entre variáveis
-- ...
+```
+Projeto-SPIN/
+│
+├── 📂 data/                              # Dados do projeto
+│   ├── base_clientes_inadimplencia.csv   # Dados para treino
+│   └── base_clientes_inadimplencia_2.csv # Dados para scoring (produção)
+│
+├── 📂 src/                               # Código fonte principal
+│   ├── pre_processamento.py              # ETL e Feature Engineering
+│   ├── model_registry.py                 # Treino + Registro no MLflow
+│   └── scoring_model_final.py            # Predições em batch
+│
+├── 📂 jobs/                              # Pipelines e automação
+│   └── vertex_pipeline.py                # Pipeline Vertex AI (KFP)
+│
+├── 📂 notebooks/                         # Notebooks interativos
+│   └── fluxo_completo_mlops.ipynb        # Tutorial completo
+│
+├── 📂 scripts/                           # Scripts auxiliares
+│   └── upload_to_gcs.py                  # Upload para GCS
+│
+├── 📂 tests/                             # Testes unitários
+│   ├── test_model.py
+│   └── test_pre_processamento.py
+│
+├── requirements.txt                       # Dependências Python
+└── README.md                              # Este arquivo
+```
 
-### 2. Pré-processamento
-- Tratamento de valores ausentes
-- Codificação de variáveis categóricas
-- Normalização/padronização de features numéricas
-- Divisão dos dados (train/validation/test)
-- ...
+---
 
-### 3. Feature Engineering
-- Criação de novas variáveis derivadas
-- Seleção de features relevantes
-- ...
+## 📚 Passo a Passo
 
-### 4. Modelagem
-Algoritmos implementados:
-- **XGBClassifier**: Modelo baseline (modelo campeão)
-- **RandomForestClassifier**: Modelo utilizado para comparação nos experimentos
-- **Modelo 3**: Modelo de x
-- ...
+### ⚙️ Configuração do Ambiente GCP
 
-### 5. Avaliação
-Métricas utilizadas:
-- **Accuracy**: Precisão geral
-- **Precision**: Precisão por classe
-- **Recall**: Sensibilidade
-- **F1-Score**: Média harmônica
-- **Confusion Matrix**: Matriz de confusão
-- ...
+**Projeto GCP:** `mlops-484912`  
+**Bucket GCS:** `meu-bucket-29061999`  
+**Região:** `us-central1`
 
-## 🚀 Como Executar
+Os dados já estão no bucket: `gs://meu-bucket-29061999/data/`
 
-### Pré-requisitos
+---
+
+### Passo 1️⃣: Instalar Dependências
+
 ```bash
-# Python 3.8 ou superior
-python --version
+# Entre na pasta do projeto
+cd Projeto-SPIN
 
-# Azure ML configurado de acordo com o *Preparando ambiente*
-
-# Git para clonar o repositório
-git --version
-```
-
-### Instalação
-*- Breve explicação de como instalar/rodar o seu projeto.*
-  
-```bash
-# 1. Clone o repositório
-git clone https://github.com/anamioto/projeto-SPIN.git
-cd projeto-SPIN/
-
-# 2. Crie um ambiente virtual
+# Crie um ambiente virtual (recomendado)
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
-# ou
-venv\Scripts\activate     # Windows
+# ou: venv\Scripts\activate  # Windows
 
-# 3. Instale as dependências
+# Instale as dependências
 pip install -r requirements.txt
 ```
 
-### Execução
-*- Explicação da ordem do seu pipeline e como rodar de forma individual cada etapa.*
+**O que está sendo instalado:**
+- `pandas`, `numpy` - Manipulação de dados
+- `scikit-learn`, `xgboost` - Algoritmos de ML
+- `mlflow` - Tracking de experimentos
+- `google-cloud-storage` - Acesso ao GCS
+- `google-cloud-aiplatform` - Vertex AI
+- `kfp` - Kubeflow Pipelines
+
+---
+
+### Passo 2️⃣: Entender os Dados
+
+Os dados estão em dois lugares:
+- **Local:** `data/base_clientes_inadimplencia.csv`
+- **GCS:** `gs://meu-bucket-29061999/data/base_clientes_inadimplencia.csv`
+
+| Arquivo | Descrição | Uso |
+|---------|-----------|-----|
+| `base_clientes_inadimplencia.csv` | Dados históricos **com label** | Treino do modelo |
+| `base_clientes_inadimplencia_2.csv` | Novos dados **sem label** | Scoring em produção |
+
+**Principais colunas:**
+
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| `ID_Cliente` | int | Identificador único |
+| `Status_Pagamento` | str | **TARGET** - Adimplente ou Inadimplente |
+| `Valor_Contrato` | float | Valor do contrato |
+| `Tempo_Assinatura` | int | Meses como cliente |
+| `Valor_em_Aberto` | float | Valor pendente |
+
+---
+
+### Passo 3️⃣: Pré-processamento
 
 ```bash
-# 1. Execute os notebooks na ordem (exemplo no caso de notebooks)
-jupyter notebook notebooks/01_exploratory_analysis.ipynb
-jupyter notebook notebooks/02_data_preprocessing.ipynb
-jupyter notebook notebooks/03_feature_engineering.ipynb
-jupyter notebook notebooks/04_model_training.ipynb
-
-# 2. Ou execute scripts individuais
-python src/model_registry.py
-python src/pre_processamento.py
-python src/scoring_model_final.py
-
+cd src
+python pre_processamento.py
 ```
 
-## 📈 Resultados Principais
+**O que esse script faz:**
 
-### Performance dos Modelos
-*- Apresentar um comparativo dos resultados dos modelos.*
+```
+DADOS BRUTOS → TRATAMENTO → FEATURE ENGINEERING → ENCODING → NORMALIZAÇÃO → DADOS PRONTOS
+```
 
-| Modelo | Accuracy | Precision | Recall | F1-Score | 
-|--------|----------|-----------|--------|----------|
-| XGBClassifier | 0.89 | 0.75 | 0.50 | 0.81 | 
-| Modelo 2 | 0.00 | 0.00 | 0.00 | 0.00 | 
-| Modelo 3 | 0.00 | 0.00 | 0.00 | 0.00 | 
-...
+1. **Carrega dados** do CSV (local ou GCS)
+2. **Trata valores nulos:**
+   - Numéricos: preenche com mediana
+   - Categóricos: preenche com "desconhecido"
+3. **Cria features (Feature Engineering):**
+   - Calcula idade a partir da data de nascimento
+   - Calcula tempo de assinatura em meses
+   - Calcula dias em atraso
+4. **Codifica categóricas:**
+   - One-hot encoding para variáveis com poucas categorias
+   - Frequency encoding para alta cardinalidade (ex: cidade)
+5. **Normaliza** valores numéricos (StandardScaler)
+6. **Salva** `df_transformado.csv`
 
-### Features Mais Importantes
-*- Destacar as features mais importantes, exemplo:*
-  
-1. **Plano_Contratado** 
-2. **Serviço_Adicional** 
-3. **Data_Vencimento_Fatura** 
-4. **Valor_em_Aberto** 
-5. **Status_Pagamento**
-6. ...
+**Output:** Arquivo `df_transformado.csv` pronto para treino
 
-### Insights de Negócio
-*- Adicionar achados e tomadas de decisões feitas.*
+---
 
-## 📁 Estrutura dos Dados
+### Passo 4️⃣: Treinamento com MLflow
 
-### Dataset Principal
-*- Apresentar uma breve descrição do dataset utilizado.*
-- **Registros**: 10,000 clientes
-- **Features**: 16 variáveis
-- **Target**: Status_Pagemnto (0: Inadimplente, 1: Em dia)
-- **Taxa de Inadimplencia**: 27.96%
+```bash
+python model_registry.py
+```
 
-### Principais Variáveis
-*- Apresentar quais são as variáveis utilizadas.*
-- **SocioDemográficas**: Cidade, Estado, Data_Nascimento, Telefone
-- **Serviços**: Servico_Adicional
-- **Contratuais**: Plano_Contratado, Data_Vencimento_Fatura, Data_Contratação
-- **Financeiras**: Valor_Fatura_Mensal, Valor_em_Aberto, Status_Pagamento
-- ...
+**O que esse script faz:**
 
-## 🔄 Pipeline de ML
-*- Descrever como rodar o pipeline criado.*
+```
+DADOS PROCESSADOS → SPLIT → TREINO → MÉTRICAS → REGISTRO MLFLOW
+```
+
+1. **Carrega** dados processados
+2. **Divide** em treino (80%) e teste (20%)
+3. **Treina 2 modelos:**
+   - XGBoost (gradient boosting)
+   - Random Forest (ensemble de árvores)
+4. **Calcula métricas:**
+   - Accuracy, Precision, Recall, F1-Score
+5. **Registra no MLflow:**
+   - Parâmetros do modelo
+   - Métricas de avaliação
+   - Modelo serializado
+6. **Versiona** no Model Registry
+
+**O que é MLflow?**
+
+MLflow é a ferramenta padrão de mercado para rastrear experimentos de ML:
 
 ```python
-# Exemplo simplificado do pipeline
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import RandomForestClassifier
-
-pipeline = Pipeline([
-    ('scaler', StandardScaler()),
-    ('classifier', RandomForestClassifier(n_estimators=100))
-])
-
-pipeline.fit(X_train, y_train)
-predictions = pipeline.predict(X_test)
+# Exemplo simplificado
+with mlflow.start_run():
+    # Log parâmetros
+    mlflow.log_param("model_type", "XGBoost")
+    
+    # Treina
+    model.fit(X_train, y_train)
+    
+    # Log métricas
+    mlflow.log_metric("accuracy", 0.85)
+    mlflow.log_metric("f1_score", 0.82)
+    
+    # Salva modelo
+    mlflow.sklearn.log_model(model, "model")
 ```
 
-## 📚 Dependências
-*- Destacar as dependências de bibliotecas e suas versões minimas necessarias para rodar o projeto.*
+**Por que usar MLflow?**
+- ✅ Compara diferentes experimentos
+- ✅ Reproduz resultados
+- ✅ Versiona modelos
+- ✅ Deploy fácil
 
-```txt
-pandas>=1.3
-numpy>=1.21.6
-scikit-learn>=1.0
-xgboost>=1.6
-mlflow>=2.3
-azure-ai-ml>=1.11
-azure-identity>=1.14
-pytest>=7.0
+---
+
+### Passo 5️⃣: Scoring em Batch (Produção)
+
+```bash
+python scoring_model_final.py \
+    --model-name ModelRFC-GCP \
+    --model-version 1 \
+    --input-csv ../data/base_clientes_inadimplencia_2.csv \
+    --upload-output true
 ```
+
+**O que esse script faz:**
+
+```
+MODELO (Registry) + NOVOS DADOS → PREDIÇÕES → SALVA RESULTADO
+```
+
+1. **Carrega modelo** do MLflow Registry
+2. **Lê novos dados** (local ou GCS)
+3. **Aplica modelo** - gera predições
+4. **Salva resultados** (local e/ou GCS)
+
+**Parâmetros:**
+
+| Parâmetro | Descrição | Exemplo |
+|-----------|-----------|---------|
+| `--model-name` | Nome do modelo no Registry | `ModelRFC-GCP` |
+| `--model-version` | Versão do modelo | `1` |
+| `--input-csv` | Dados para scoring | `gs://bucket/data/novos.csv` |
+| `--upload-output` | Fazer upload para GCS? | `true` |
+
+**Output:** CSV com predições (cliente + probabilidade de inadimplência)
+
+---
+
+### Passo 6️⃣: Pipeline Automatizado (Vertex AI)
+
+> ⚠️ **Este passo precisa rodar no GCP** (Cloud Shell ou Vertex AI Workbench)
+
+```bash
+cd jobs
+python vertex_pipeline.py
+```
+
+**O que esse script faz:**
+
+```
+DEFINE COMPONENTES → COMPILA PIPELINE → SUBMETE PARA VERTEX AI
+```
+
+1. **Define componentes** (cada etapa é um container):
+   - `preprocessamento`: limpa dados
+   - `treinamento`: treina modelo
+   - `scoring`: faz predições
+2. **Conecta componentes** (output de um → input do próximo)
+3. **Compila** para formato Vertex AI
+4. **Submete** o job
+
+**Acompanhe a execução:**
+- Console: https://console.cloud.google.com/vertex-ai/pipelines
+
+**Por que usar Pipeline?**
+- ✅ **Reprodutibilidade:** Mesmo código = mesmo resultado
+- ✅ **Automação:** Pode agendar (ex: todo dia às 6h)
+- ✅ **Escalabilidade:** Roda em máquinas potentes
+- ✅ **Rastreabilidade:** Log de tudo que rodou
+
+---
+
+## 🔍 Como Funciona Cada Etapa
+
+### Diagrama de Fluxo de Dados
+
+```
+                    ┌────────────────────────────────────────┐
+                    │           Google Cloud Storage          │
+                    │  gs://meu-bucket-29061999/              │
+                    └───────────────┬────────────────────────┘
+                                    │
+                    ┌───────────────┼───────────────┐
+                    │               │               │
+                    ▼               ▼               ▼
+            ┌───────────┐   ┌───────────┐   ┌───────────┐
+            │   data/   │   │  mlflow/  │   │predictions│
+            │  (CSVs)   │   │ (modelos) │   │ (outputs) │
+            └─────┬─────┘   └─────┬─────┘   └─────▲─────┘
+                  │               │               │
+                  │               │               │
+    ┌─────────────┼───────────────┼───────────────┼─────────────┐
+    │             │     PIPELINE  │               │             │
+    │             ▼               ▼               │             │
+    │    ┌────────────────┐  ┌─────────┐  ┌──────┴──────┐      │
+    │    │ Pré-processamento│─▶│ Treino  │─▶│  Scoring    │      │
+    │    └────────────────┘  └────┬────┘  └─────────────┘      │
+    │                             │                             │
+    │                             ▼                             │
+    │                      ┌─────────────┐                      │
+    │                      │   MLflow    │                      │
+    │                      │  Registry   │                      │
+    │                      └─────────────┘                      │
+    └───────────────────────────────────────────────────────────┘
+```
+
+### Fluxo Detalhado
+
+```
+1. DADOS BRUTOS (GCS)
+   └─▶ base_clientes_inadimplencia.csv
+       • 10.000 registros
+       • 20 colunas
+       • Contém valores nulos
+       • Variáveis categóricas como strings
+
+2. PRÉ-PROCESSAMENTO
+   └─▶ df_transformado.csv
+       • Nulos tratados
+       • Features criadas (idade, tempo_assinatura)
+       • Categóricas codificadas
+       • Valores normalizados
+
+3. TREINAMENTO
+   └─▶ MLflow Experiment
+       • XGBoost: accuracy=0.85, f1=0.82
+       • RandomForest: accuracy=0.83, f1=0.80
+       • Modelo campeão: XGBoost
+
+4. REGISTRO
+   └─▶ MLflow Model Registry
+       • ModelXGB-GCP v1 (Staging)
+       • ModelRFC-GCP v1 (Production)
+
+5. SCORING
+   └─▶ predicoes_inadimplencia.csv
+       • ID_Cliente
+       • prediction (0 ou 1)
+       • probability (0.0 a 1.0)
+```
+
+---
+
+## 🚀 Executando o Projeto
+
+### Opção A: Local (Desenvolvimento)
+
+Ideal para testar e desenvolver:
+
+```bash
+# 1. Pré-processamento
+cd src
+python pre_processamento.py
+
+# 2. Treinamento (MLflow salva local em ./mlruns)
+python model_registry.py
+
+# 3. Scoring
+python scoring_model_final.py \
+    --model-name ModelRFC-GCP \
+    --model-version 1 \
+    --input-csv ../data/base_clientes_inadimplencia_2.csv
+```
+
+### Opção B: Cloud Shell (Recomendado)
+
+1. Acesse: https://shell.cloud.google.com
+2. Clone o projeto:
+   ```bash
+   git clone <seu-repo>
+   cd Projeto-SPIN
+   pip install -r requirements.txt
+   ```
+3. Execute os scripts
+
+### Opção C: Notebook Interativo
+
+Abra e execute: `notebooks/fluxo_completo_mlops.ipynb`
+
+Este notebook tem todo o fluxo explicado passo a passo!
+
+### Opção D: Pipeline Completo (Produção)
+
+```bash
+# No Cloud Shell ou Vertex AI Workbench
+cd jobs
+python vertex_pipeline.py
+```
+
+---
+
+## 🎓 Conceitos para Entrevista
+
+### Perguntas Frequentes e Respostas
+
+---
+
+**❓ "O que é MLOps?"**
+
+> MLOps é a prática de aplicar princípios de DevOps ao ciclo de vida de Machine Learning. 
+> Inclui:
+> - Versionamento de dados e modelos
+> - Automação de pipelines
+> - Monitoramento de performance
+> - CI/CD para ML
+
+---
+
+**❓ "Como você versiona modelos?"**
+
+> Uso MLflow Model Registry. Cada modelo tem:
+> - Nome único (ex: ModelRFC-GCP)
+> - Múltiplas versões (1, 2, 3...)
+> - Stages (Staging, Production)
+> 
+> Posso fazer rollback facilmente se uma versão nova tiver problemas.
+
+---
+
+**❓ "Como você sabe se um modelo está degradando?"**
+
+> Monitoro três tipos de métricas:
+> 1. **Negócio:** Taxa real de inadimplência vs predita
+> 2. **Dados:** Data drift (distribuição das features mudando)
+> 3. **Sistema:** Latência, throughput, erros
+
+---
+
+**❓ "O que é Feature Engineering?"**
+
+> É criar novas variáveis a partir dos dados brutos que ajudam o modelo a aprender.
+> 
+> Exemplo neste projeto:
+> - `Data_Nascimento` → `Idade`
+> - `Data_Contratacao` → `Tempo_Assinatura_Meses`
+> - `Data_Vencimento` + `Status` → `Dias_Atraso`
+
+---
+
+**❓ "Qual a diferença entre batch e real-time?"**
+
+| Tipo | Quando usar | Exemplo | Latência |
+|------|-------------|---------|----------|
+| **Batch** | Muitos dados de uma vez | Scoring noturno | Minutos/horas |
+| **Real-time** | Uma predição por vez | API de crédito | Milissegundos |
+| **Streaming** | Dados contínuos | Fraude em tempo real | Segundos |
+
+---
+
+**❓ "Como você escolhe o melhor modelo?"**
+
+> 1. Defino a métrica principal (F1-Score para classes desbalanceadas)
+> 2. Treino vários modelos
+> 3. Comparo métricas no MLflow
+> 4. Considero também: interpretabilidade, custo computacional, latência
+
+---
+
+### Métricas de Avaliação
+
+| Métrica | Fórmula | Quando usar |
+|---------|---------|-------------|
+| **Accuracy** | (TP+TN)/(Total) | Classes balanceadas |
+| **Precision** | TP/(TP+FP) | Evitar falsos positivos |
+| **Recall** | TP/(TP+FN) | Não perder positivos reais |
+| **F1-Score** | 2*(P*R)/(P+R) | Equilíbrio |
+| **ROC-AUC** | Área sob curva | Comparar modelos |
+
+**Para inadimplência:** Priorizamos **Recall** (não queremos deixar passar inadimplentes) e **F1-Score** (equilíbrio geral).
+
+---
+
+### Checklist de MLOps Implementado
+
+- [x] ✅ Dados versionados e armazenados (GCS)
+- [x] ✅ Código versionado (Git)
+- [x] ✅ Experimentos rastreados (MLflow)
+- [x] ✅ Modelos versionados (Model Registry)
+- [x] ✅ Pipeline automatizado (Vertex AI)
+- [ ] 🔄 Monitoramento em produção (próximo passo)
+- [ ] 🔄 CI/CD para retreino automático (próximo passo)
+
+---
+
+## 📚 Recursos Adicionais
+
+- [MLflow Documentation](https://mlflow.org/docs/latest/index.html)
+- [Vertex AI Pipelines](https://cloud.google.com/vertex-ai/docs/pipelines)
+- [Kubeflow Pipelines](https://www.kubeflow.org/docs/components/pipelines/)
+- [Google Cloud Storage](https://cloud.google.com/storage/docs)
+
+---
 
 ## 🤝 Contribuindo
-*- Um passo-a-passo para incentivar que novas ideias ou melhorias possam ser feitas no seu projeto.*
 
-1. **Fork** o projeto
-2. Crie uma **branch** para sua feature (`git checkout -b feature/nova-feature`)
-3. **Commit** suas mudanças (`git commit -m 'Adiciona nova feature'`)
-4. **Push** para a branch (`git push origin feature/nova-feature`)
-5. Abra um **Pull Request**
-
-## 📝 Próximos Passos
-*- Apresentar quais são as ideias de melhoria e próximos passos a serem desenvolvidos.*
-
-### Melhorias Técnicas
-- [ ] Implementar validação cruzada estratificada
-- [ ] Otimização de hiperparâmetros
-- [ ] Implementar SHAP para interpretabilidade
-
-### Análises Adicionais
-- [ ] Análise de cohort dos clientes
-- [ ] Segmentação de clientes (clustering)
-- [ ] A/B testing para estratégias de pagamento
-
-## 👥 Autor
-*- Descreva brevemente quem é você e sua formação.*
-
-**Ana Clara Mioto**
-- GitHub: [@anamioto](https://github.com/anamioto)
-- Formação: Bacharel em Informática Biomédica, Mestre em Bioengenharia
-- Especialização: Data Science e Machine Learning
-
-## 📄 Licença
-
-*Adicionar licença ao projeto caso haja.*
-
-## 📞 Contato
-
-Para dúvidas, sugestões ou colaborações:
-- **Issues**: Abra uma issue no GitHub
-- **Email**: [incluir email]
-- **LinkedIn**: [incluir perfil]
-- **Instagram**: @ana_mioto
+1. Fork o repositório
+2. Crie uma branch (`git checkout -b feature/nova-feature`)
+3. Commit suas mudanças (`git commit -m 'Add nova feature'`)
+4. Push para a branch (`git push origin feature/nova-feature`)
+5. Abra um Pull Request
 
 ---
 
-## 🔍 Glossário
-*- Explicação/significado de termos de négocio e técnicos para entendimendo do seu projeto.*
-
-- **Inadimplencia**: Taxa de não pagamento ou atraso no saldo devedor dos clientes
-- **Feature Engineering**: Processo de criação e seleção de variáveis
-- **Pipeline**: Sequência automatizada de processamento
-- **Cross-validation**: Técnica de validação de modelos
-- **Ensemble**: Combinação de múltiplos modelos
-- **Cluster de Computação**: Conecta dois ou mais computadores em uma rede para que trabalhem de forma conjunta.
-- ...
-
----
-
-*Documentação atualizada em: Agosto 2025*
+**Boa sorte na entrevista!** 🚀🎯
 

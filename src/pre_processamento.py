@@ -3,19 +3,39 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import logging
-from azure.identity import DefaultAzureCredential
-from azure.ai.ml import MLClient
+from google.cloud import storage
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 
+# ==================== CONFIGURAÇÕES GCP ====================
+PROJECT_ID = "mlops-484912"
+BUCKET_NAME = "meu-bucket-29061999"
 
 # Configura logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def carregar_dados(caminho: str) -> pd.DataFrame:
-    """Carrega dados de um arquivo CSV."""
+    """
+    Carrega dados de um arquivo CSV.
+    Suporta caminhos locais ou GCS (gs://bucket/path).
+    """
     logging.info(f'Carregando dados de {caminho}')
     return pd.read_csv(caminho)
+
+
+def carregar_dados_gcs(gcs_path: str) -> pd.DataFrame:
+    """Carrega dados diretamente do Google Cloud Storage."""
+    logging.info(f'Carregando dados do GCS: {gcs_path}')
+    return pd.read_csv(gcs_path)
+
+
+def upload_to_gcs(local_path: str, gcs_path: str):
+    """Upload de arquivo local para GCS."""
+    client = storage.Client(project=PROJECT_ID)
+    bucket = client.bucket(BUCKET_NAME)
+    blob = bucket.blob(gcs_path)
+    blob.upload_from_filename(local_path)
+    logging.info(f"Upload concluído: gs://{BUCKET_NAME}/{gcs_path}")
 
 def tratar_valores_nulos(df: pd.DataFrame) -> pd.DataFrame:
     """Preenche valores nulos com estratégias apropriadas."""
@@ -251,28 +271,32 @@ def pipeline_preprocessamento(caminho_csv, target, colunas_data, drop_cols=[]):
     return df
 
 
-#Autenticação do Azure ML
-ml_client = MLClient(
-    DefaultAzureCredential(),
-    subscription_id = "0b97f8d7-e740-4d8a-be3c-96eea4182bf8",
-    resource_group_name = "AulasAlura",
-    workspace_name = "DS-Workspace" 
-)
+# ==================== EXECUÇÃO PRINCIPAL ====================
+# Aqui você pode escolher entre carregar dados locais ou do GCS
 
+# Detecta o diretório do projeto (funciona de qualquer lugar)
+import os
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(SCRIPT_DIR)
 
-# Diretório dos dados
+# Opção 1: Carregar do GCS (produção)
+# input_csv = f"gs://{BUCKET_NAME}/data/base_clientes_inadimplencia.csv"
 
-#teste - remover a # do input_csv quando testar
-#input_csv = ml_client.data.get("base_inadimplencia_testes", version="1")
+# Opção 2: Carregar local (desenvolvimento)
+input_csv = os.path.join(PROJECT_DIR, "data", "base_clientes_inadimplencia.csv")
 
-#treino - colocar a # no input_csv quando após registrar o modelo treinado
-input_csv = ml_client.data.get("base_clientes_inadimplencia", version="1")
-df = pd.read_csv(input_csv.path) 
+df = carregar_dados(input_csv)
 target = "Status_Pagamento"
 colunas_data = ["Data_Contratacao", "Data_Vencimento_Fatura", "Data_Ingestao", "Data_Atualizacao"] 
-drop_cols = ["Telefone", "Nome", "Email", "Data_Nascimento", "Data_Contratacao", "Data_Vencimento_Fatura", "Data_Ingestao", "Data_Atualizacao"]  # Ajuste se necessário
-df_transformado  = pipeline_preprocessamento(input_csv.path, target, colunas_data, drop_cols=drop_cols)
+drop_cols = ["Telefone", "Nome", "Email", "Data_Nascimento", "Data_Contratacao", "Data_Vencimento_Fatura", "Data_Ingestao", "Data_Atualizacao"]
 
-# Salva dados prontos para o próximo passo
-df_transformado.to_csv("df_transformado.csv", index=True)
+df_transformado = pipeline_preprocessamento(input_csv, target, colunas_data, drop_cols=drop_cols)
+
+# Salva dados processados localmente
+output_path = os.path.join(PROJECT_DIR, "df_transformado.csv")
+df_transformado.to_csv(output_path, index=True)
+logging.info(f"Dados processados salvos em {output_path}")
+
+# (Opcional) Upload para GCS
+# upload_to_gcs("df_transformado.csv", "data/processed/df_transformado.csv")
 
