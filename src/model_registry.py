@@ -187,10 +187,16 @@ if __name__ == "__main__":
     # ==================== PIPELINE DE TREINAMENTO ====================
     # 1. Carrega dados pré-processados
     df_transformado = carregar_dados()
-    df_transformado = df_transformado.set_index('ID_Cliente', drop=True)
     
-    # 2. Split treino/teste
-    X_train, X_test, y_train, y_test = split_dados(df_transformado, target="Status_Pagamento")
+    # Remove ID_Cliente se existir (não é feature)
+    if 'ID_Cliente' in df_transformado.columns:
+        df_transformado = df_transformado.drop(columns=['ID_Cliente'])
+    
+    # 2. Split treino/teste - target agora é "Inadimplente"
+    X_train, X_test, y_train, y_test = split_dados(df_transformado, target="Inadimplente")
+    
+    # Mostra features que serão usadas
+    logging.info(f"Features do modelo ({len(X_train.columns)}): {list(X_train.columns)}")
     
     # 3. Treina modelos (experimentos)
     model_xgb, metrics_xgb = treinar_modelo_xgb(X_train, y_train, X_test, y_test)
@@ -200,7 +206,7 @@ if __name__ == "__main__":
     registra_mlflow_gcp_xgb(model_xgb, metrics_xgb, experiment_name="inadimplencia-xgb")
     registra_mlflow_gcp(model_rf, metrics_rf, 
                         experiment_name="inadimplencia-rfc",
-                        tags={"versao": "1.0", "pipeline": "producao", "cloud": "gcp"})
+                        tags={"versao": "2.0", "pipeline": "producao", "cloud": "gcp"})
 
     logging.info("Pipeline de modelagem e registro concluído!")
 

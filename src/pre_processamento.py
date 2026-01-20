@@ -255,17 +255,28 @@ def pipeline_preprocessamento(caminho_csv, target, colunas_data, drop_cols=[]):
     #print(df.head())
     df = tratar_valores_nulos(df)
     df = tratar_data_nascimento(df)
-    df = df.set_index('ID_Cliente', drop=True)
+    
+    # Remove ID_Cliente - não é feature, é identificador
+    if 'ID_Cliente' in df.columns:
+        df = df.drop(columns=['ID_Cliente'])
+    
     df = converter_colunas_data(df, colunas_data)
     df = calcular_tempo_assinatura(df)
     df = calcular_tempo_atraso_fatura(df)
     df.drop(drop_cols, axis=1, inplace=True)
+    
+    # Converte target para binário ANTES de codificar
+    # Status_Pagamento: "Inadimplente" = 1, outros = 0
+    if target in df.columns:
+        df['Inadimplente'] = (df[target] == 'Inadimplente').astype(int)
+        df = df.drop(columns=[target])
+    
     print(" ")
     df = codificar_variaveis_categoricas(df)
     print(" ")
     #print(df.head())
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    numeric_cols = [c for c in numeric_cols if c != target]
+    numeric_cols = [c for c in numeric_cols if c != 'Inadimplente']
     df = escalar_variaveis(df, numeric_cols)
     logging.info('Pré-processamento finalizado')
     return df
