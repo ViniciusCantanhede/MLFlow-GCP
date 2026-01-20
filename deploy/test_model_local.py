@@ -81,14 +81,21 @@ def test_prediction(model):
         import pandas as pd
         df = pd.read_csv(df_path)
         
-        # Pegar primeiras 5 linhas como teste
+        # Colunas que NÃO são features (remover antes de prever)
+        cols_to_drop = ["Inadimplente", "ID_Cliente", "Status_Pagamento"]
+        cols_to_drop = [c for c in cols_to_drop if c in df.columns]
+        
+        # Separar target se existir
         target = "Inadimplente"
         if target in df.columns:
-            X_test = df.drop(columns=[target]).head(5)
             y_real = df[target].head(5).values
         else:
-            X_test = df.head(5)
             y_real = None
+        
+        # Features para predição (remover colunas não-features)
+        X_test = df.drop(columns=cols_to_drop, errors='ignore').head(5)
+        
+        print(f"   Features usadas ({len(X_test.columns)}): {list(X_test.columns)[:5]}...")
         
         # Fazer predições
         predictions = model.predict(X_test)
